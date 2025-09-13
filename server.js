@@ -11,6 +11,25 @@ const PORT = process.env.PORT || 3000;
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://DAMIANRAMIREZ:DeadPool213%3F%21@ac-dmmrxxl-shard-00-00.yuvgucy.mongodb.net/blog?retryWrites=true&w=majority';
 
+const mongoose = require('mongoose');
+
+async function connectToMongo() {
+  try {
+    console.log('🔗 Conectando con mongoose...');
+    
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000
+    });
+    
+    console.log('✅ Conectado a MongoDB via mongoose');
+    
+    // El resto del código igual...
+  } catch (error) {
+    console.error('❌ Error con mongoose:', error.message);
+    process.exit(1);
+  }
+}
+
 let dbClient;
 let db;
 
