@@ -155,3 +155,6 @@ process.on('SIGTERM', async () => {
   }
   process.exit(0);
 });
+console.log('MongoDB URI:', process.env.MONGODB_URI ? '✅ Definida' : '❌ No definida');
+console.log('Node version:', process.version);
+console.log('NODE_ENV:', process.env.NODE_ENV);
