@@ -8,27 +8,8 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://DAMIANRAMIREZ:DeadPool213%3F%21@ac-dmmrxxl-shard-00-00.yuvgucy.mongodb.net/blog?retryWrites=true&w=majority';
-
-const mongoose = require('mongoose');
-
-async function connectToMongo() {
-  try {
-    console.log('🔗 Conectando con mongoose...');
-    
-    await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 10000
-    });
-    
-    console.log('✅ Conectado a MongoDB via mongoose');
-    
-    // El resto del código igual...
-  } catch (error) {
-    console.error('❌ Error con mongoose:', error.message);
-    process.exit(1);
-  }
-}
+// MongoDB Connection - Versión compatible
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://DAMIANRAMIREZ:DeadPool213%3F%21@ac-dmmrxxl-shard-00-00.yuvgucy.mongodb.net/fiestadelafrutilla?retryWrites=true&w=majority';
 
 let dbClient;
 let db;
@@ -36,12 +17,13 @@ let db;
 async function connectToMongo() {
   try {
     console.log('🔗 Intentando conectar a MongoDB...');
+    console.log('Node version:', process.version);
     
-    // Usar conexión más básica y compatible
+    // Conexión compatible con versiones anteriores
     dbClient = new MongoClient(MONGODB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 10000
+      serverSelectionTimeoutMS: 15000
     });
     
     await dbClient.connect();
@@ -49,10 +31,15 @@ async function connectToMongo() {
     console.log('✅ Conectado a MongoDB Atlas');
     
     // Crear colecciones iniciales
-    await db.collection('users').createIndex({ email: 1 }, { unique: true });
-    await db.collection('posts').createIndex({ slug: 1 }, { unique: true });
+    try {
+      await db.collection('users').createIndex({ email: 1 }, { unique: true });
+      await db.collection('posts').createIndex({ slug: 1 }, { unique: true });
+      console.log('✅ Índices creados');
+    } catch (indexError) {
+      console.log('ℹ️ Índices ya existen o error menor:', indexError.message);
+    }
     
-    // Crear usuario admin inicial
+    // Crear usuario admin inicial si no existe
     const existingAdmin = await db.collection('users').findOne({ email: 'admin@fiestadelafrutilla.com' });
     if (!existingAdmin) {
       const bcrypt = require('bcryptjs');
@@ -64,7 +51,9 @@ async function connectToMongo() {
         role: 'admin',
         createdAt: new Date()
       });
-      console.log('👤 Usuario admin creado');
+      console.log('👤 Usuario admin creado: admin@fiestadelafrutilla.com / admin123');
+    } else {
+      console.log('👤 Usuario admin ya existe');
     }
     
   } catch (error) {
@@ -89,8 +78,8 @@ app.use(express.urlencoded({ extended: true }));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100
 });
 app.use(limiter);
 
@@ -106,7 +95,8 @@ app.get('/api/health', async (req, res) => {
     res.json({ 
       status: 'OK', 
       database: 'connected',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      nodeVersion: process.version
     });
   } catch (error) {
     res.status(500).json({ 
@@ -117,7 +107,7 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// Serve admin panel
+// Serve admin panel (si existe)
 app.use(express.static('public'));
 app.get('/admin*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
@@ -136,25 +126,25 @@ app.use('*', (req, res) => {
 
 // Start server
 async function startServer() {
+  console.log('🚀 Iniciando servidor...');
+  console.log('🌐 Entorno:', process.env.NODE_ENV || 'development');
+  
   await connectToMongo();
   
   app.listen(PORT, () => {
-    console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
-    console.log(`🌐 Health check: http://localhost:${PORT}/api/health`);
-    console.log(`📊 Panel admin: http://localhost:${PORT}/admin`);
+    console.log(`🎯 Servidor ejecutándose en puerto ${PORT}`);
+    console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
+    console.log(`👨‍💻 Panel admin: http://localhost:${PORT}/admin`);
   });
 }
 
-startServer();
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('🛑 Shutting down gracefully...');
-  if (dbClient) {
-    await dbClient.close();
-  }
-  process.exit(0);
+// Manejo de errores no capturados
+process.on('unhandledRejection', (error) => {
+  console.error('❌ Unhandled Rejection:', error);
 });
-console.log('MongoDB URI:', process.env.MONGODB_URI ? '✅ Definida' : '❌ No definida');
-console.log('Node version:', process.version);
-console.log('NODE_ENV:', process.env.NODE_ENV);
+
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+});
+
+startServer();
