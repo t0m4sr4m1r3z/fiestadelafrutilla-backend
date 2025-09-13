@@ -8,6 +8,13 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+  console.error('❌ ERROR: MONGODB_URI no está definida en las variables de entorno');
+  process.exit(1);
+}
+
 let dbClient;
 let db;
 
