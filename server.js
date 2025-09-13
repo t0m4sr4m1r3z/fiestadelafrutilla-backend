@@ -8,9 +8,6 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// MongoDB Connection - Versión compatible
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://DAMIANRAMIREZ:DeadPool213%3F%21@ac-dmmrxxl-shard-00-00.yuvgucy.mongodb.net/fiestadelafrutilla?retryWrites=true&w=majority';
-
 let dbClient;
 let db;
 
