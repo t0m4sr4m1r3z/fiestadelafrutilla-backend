@@ -16,7 +16,15 @@ let db;
 
 async function connectToMongo() {
   try {
-    dbClient = new MongoClient(MONGODB_URI);
+    console.log('🔗 Intentando conectar a MongoDB...');
+    
+    // Usar conexión más básica y compatible
+    dbClient = new MongoClient(MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 10000
+    });
+    
     await dbClient.connect();
     db = dbClient.db('fiestadelafrutilla');
     console.log('✅ Conectado a MongoDB Atlas');
@@ -25,7 +33,7 @@ async function connectToMongo() {
     await db.collection('users').createIndex({ email: 1 }, { unique: true });
     await db.collection('posts').createIndex({ slug: 1 }, { unique: true });
     
-    // Crear usuario admin inicial si no existe
+    // Crear usuario admin inicial
     const existingAdmin = await db.collection('users').findOne({ email: 'admin@fiestadelafrutilla.com' });
     if (!existingAdmin) {
       const bcrypt = require('bcryptjs');
@@ -37,11 +45,12 @@ async function connectToMongo() {
         role: 'admin',
         createdAt: new Date()
       });
-      console.log('👤 Usuario admin creado: admin@fiestadelafrutilla.com / admin123');
+      console.log('👤 Usuario admin creado');
     }
     
   } catch (error) {
     console.error('❌ Error conectando a MongoDB:', error.message);
+    console.error('Error stack:', error.stack);
     process.exit(1);
   }
 }
