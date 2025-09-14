@@ -68,51 +68,78 @@
         <button onclick="logout()">Cerrar Sesión</button>
     </div>
 
-    <script>
-        async function login() {
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
+<script>
+    async function login() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const errorDiv = document.getElementById('errorMessage');
+        
+        // Limpiar error anterior
+        errorDiv.style.display = 'none';
+        
+        // Validación básica
+        if (!email || !password) {
+            showError('Por favor completa todos los campos');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email, password })
+            });
             
-            try {
-                const response = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ email, password })
-                });
+            const data = await response.json();
+            
+            // ✅ CORRECCIÓN: Verificar si hay token en lugar de success
+            if (data.token) {
+                localStorage.setItem('token', data.token);
+                localStorage.setItem('user', JSON.stringify(data.user));
                 
-                const data = await response.json();
+                document.getElementById('loginView').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'block';
                 
-                if (data.success) {
-                    localStorage.setItem('token', data.token);
-                    document.getElementById('loginView').style.display = 'none';
-                    document.getElementById('dashboard').style.display = 'block';
-                } else {
-                    showError(data.error || 'Error de autenticación');
-                }
-            } catch (error) {
-                showError('Error de conexión');
+                console.log('✅ Login exitoso:', data.user);
+                
+            } else if (data.error) {
+                // ✅ Manejar error del servidor
+                showError(data.error);
+            } else {
+                showError('Error de autenticación');
             }
+            
+        } catch (error) {
+            console.error('Error de conexión:', error);
+            showError('Error de conexión con el servidor');
         }
+    }
+    
+    function showError(message) {
+        const errorDiv = document.getElementById('errorMessage');
+        errorDiv.textContent = message;
+        errorDiv.style.display = 'block';
+    }
+    
+    function logout() {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        document.getElementById('loginView').style.display = 'block';
+        document.getElementById('dashboard').style.display = 'none';
+    }
+    
+    // Verificar si ya está logueado
+    if (localStorage.getItem('token')) {
+        document.getElementById('loginView').style.display = 'none';
+        document.getElementById('dashboard').style.display = 'block';
         
-        function showError(message) {
-            const errorDiv = document.getElementById('errorMessage');
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-        }
-        
-        function logout() {
-            localStorage.removeItem('token');
-            document.getElementById('loginView').style.display = 'block';
-            document.getElementById('dashboard').style.display = 'none';
-        }
-        
-        // Verificar si ya está logueado
-        if (localStorage.getItem('token')) {
-            document.getElementById('loginView').style.display = 'none';
-            document.getElementById('dashboard').style.display = 'block';
-        }
-    </script>
+        // Mostrar info del usuario
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        console.log('Usuario logueado:', user);
+    }
+</script>
 </body>
+
 </html>
