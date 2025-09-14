@@ -1,26 +1,13 @@
-module.exports = (db) => {
-  const router = require('express').Router();
+const express = require('express');
+
+module.exports = function(db) {
+  const router = express.Router();
 
   // Get config
   router.get('/', async (req, res) => {
     try {
-      let config = await db.collection('config').findOne({});
-      
-      if (!config) {
-        // Create default config
-        config = {
-          siteTitle: 'Fiesta de la Frutilla',
-          siteDescription: 'La mejor fiesta de frutillas de la región',
-          adminEmail: 'admin@fiestadelafrutilla.com',
-          socialMedia: {},
-          createdAt: new Date(),
-          updatedAt: new Date()
-        };
-        await db.collection('config').insertOne(config);
-      }
-
-      res.json(config);
-
+      const config = await db.collection('config').findOne({});
+      res.json(config || {});
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -29,19 +16,12 @@ module.exports = (db) => {
   // Update config
   router.put('/', async (req, res) => {
     try {
-      const config = await db.collection('config').findOneAndUpdate(
+      const result = await db.collection('config').updateOne(
         {},
-        { 
-          $set: {
-            ...req.body,
-            updatedAt: new Date()
-          } 
-        },
-        { returnDocument: 'after', upsert: true }
+        { $set: { ...req.body, updatedAt: new Date() } },
+        { upsert: true }
       );
-
-      res.json(config);
-
+      res.json({ message: 'Configuración actualizada', result });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
