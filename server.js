@@ -40,6 +40,87 @@ app.use((req, res, next) => {
 
 // Variable global para la base de datos
 let db = null;
+let dbClient = null;
+
+// ✅ ENDPOINT TEMPORAL DE LOGIN - Funciona inmediatamente
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    console.log('🔐 Login endpoint llamado');
+    
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email y contraseña requeridos' });
+    }
+
+    // Si la base de datos aún no está conectada, usar login temporal
+    if (!db) {
+      console.log('⏳ DB no conectada aún, usando verificación temporal');
+      
+      // Login hardcodeado para admin (solo para testing)
+      if (email === 'admin@fiestadelafrutilla.com' && password === 'admin123') {
+        const jwt = require('jsonwebtoken');
+        const token = jwt.sign(
+          { userId: 'admin-id', email: email, role: 'admin' },
+          process.env.JWT_SECRET,
+          { expiresIn: '24h' }
+        );
+        
+        return res.json({
+          token,
+          user: {
+            id: 'admin-id',
+            email: email,
+            name: 'Administrador',
+            role: 'admin'
+          }
+        });
+      }
+      
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+    
+    // Si la base de datos ya está conectada, usar la real
+    console.log('✅ Usando base de datos real para login');
+    const user = await db.collection('users').findOne({ email });
+    
+    if (!user) {
+      console.log('❌ Usuario no encontrado:', email);
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    const bcrypt = require('bcryptjs');
+    const validPassword = await bcrypt.compare(password, user.password);
+    
+    if (!validPassword) {
+      console.log('❌ Contraseña incorrecta para:', email);
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign(
+      { userId: user._id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+    
+    console.log('✅ Login exitoso para:', email);
+    
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error en login:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Función para configurar las rutas DESPUÉS de conectar a MongoDB
 function setupRoutes() {
@@ -51,12 +132,18 @@ function setupRoutes() {
     return;
   }
 
-  // Routes que requieren la base de datos
-  app.use('/api/auth', require('./routes/auth')(db));
-  app.use('/api/posts', require('./routes/posts')(db));
-  app.use('/api/config', require('./routes/config')(db));
-
-  console.log('✅ Rutas configuradas correctamente');
+  try {
+    // Routes que requieren la base de datos
+    app.use('/api/auth', require('./routes/auth')(db));
+    app.use('/api/posts', require('./routes/posts')(db));
+    app.use('/api/config', require('./routes/config')(db));
+    
+    console.log('✅ Rutas configuradas correctamente');
+    console.log('📋 Endpoints disponibles: /api/auth, /api/posts, /api/config');
+    
+  } catch (error) {
+    console.error('❌ Error configurando rutas:', error);
+  }
 }
 
 // Health check que no requiere db inicialmente
@@ -68,7 +155,8 @@ app.get('/api/health', async (req, res) => {
       database: dbStatus,
       timestamp: new Date().toISOString(),
       nodeVersion: process.version,
-      environment: process.env.NODE_ENV
+      environment: process.env.NODE_ENV,
+      message: db ? 'Base de datos conectada' : 'Conectando a base de datos...'
     });
   } catch (error) {
     res.status(500).json({ 
@@ -79,10 +167,42 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+// Endpoint de información del sistema
+app.get('/api/debug', (req, res) => {
+  res.json({
+    nodeVersion: process.version,
+    environment: process.env.NODE_ENV,
+    port: process.env.PORT,
+    hasMongoDB: !!db,
+    currentTime: new Date().toISOString(),
+    status: db ? 'DB Connected' : 'DB Connecting'
+  });
+});
+
 // Serve admin panel
 app.use(express.static('public'));
 app.get('/admin*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// Error handling
+app.use((err, req, res, next) => {
+  console.error('❌ Error no manejado:', err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({ 
+    error: 'Endpoint not found',
+    requestedUrl: req.originalUrl,
+    availableEndpoints: [
+      'POST /api/auth/login',
+      'GET /api/health',
+      'GET /api/debug',
+      'GET /admin'
+    ]
+  });
 });
 
 // MongoDB Connection
@@ -96,15 +216,19 @@ if (!MONGODB_URI) {
 async function connectToMongo() {
   try {
     console.log('🔗 Intentando conectar a MongoDB...');
+    console.log('URI:', MONGODB_URI.replace(/:[^:]*@/, ':****@'));
     
-    const dbClient = new MongoClient(MONGODB_URI, {
+    const client = new MongoClient(MONGODB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 15000
+      serverSelectionTimeoutMS: 30000,
+      connectTimeoutMS: 30000
     });
     
-    await dbClient.connect();
-    db = dbClient.db('fiestadelafrutilla');
+    await client.connect();
+    db = client.db('fiestadelafrutilla');
+    dbClient = client;
+    
     console.log('✅ Conectado a MongoDB Atlas');
     
     // Configurar rutas AHORA que db está disponible
@@ -114,60 +238,61 @@ async function connectToMongo() {
     try {
       await db.collection('users').createIndex({ email: 1 }, { unique: true });
       await db.collection('posts').createIndex({ slug: 1 }, { unique: true });
-      console.log('✅ Índices creados');
+      console.log('✅ Índices creados/verificados');
     } catch (indexError) {
       console.log('ℹ️ Índices ya existen:', indexError.message);
     }
     
-    // Crear usuario admin si no existe
-    const existingAdmin = await db.collection('users').findOne({ email: 'admin@fiestadelafrutilla.com' });
-    if (!existingAdmin) {
-      const bcrypt = require('bcryptjs');
-      const hashedPassword = await bcrypt.hash('admin123', 12);
-      await db.collection('users').insertOne({
-        email: 'admin@fiestadelafrutilla.com',
-        password: hashedPassword,
-        name: 'Administrador',
-        role: 'admin',
-        createdAt: new Date()
-      });
-      console.log('👤 Usuario admin creado');
-    } else {
-      console.log('👤 Usuario admin ya existe');
+    // Verificar usuario admin
+    try {
+      const existingAdmin = await db.collection('users').findOne({ email: 'admin@fiestadelafrutilla.com' });
+      if (!existingAdmin) {
+        const bcrypt = require('bcryptjs');
+        const hashedPassword = await bcrypt.hash('admin123', 12);
+        await db.collection('users').insertOne({
+          email: 'admin@fiestadelafrutilla.com',
+          password: hashedPassword,
+          name: 'Administrador',
+          role: 'admin',
+          createdAt: new Date()
+        });
+        console.log('👤 Usuario admin creado');
+      } else {
+        console.log('👤 Usuario admin ya existe');
+      }
+    } catch (userError) {
+      console.log('⚠️ Error verificando usuario admin:', userError.message);
     }
     
-    return dbClient;
+    return client;
     
   } catch (error) {
     console.error('❌ Error conectando a MongoDB:', error.message);
+    console.error('Error stack:', error.stack);
     process.exit(1);
   }
 }
 
-// Error handling
-app.use((err, req, res, next) => {
-  console.error('❌ Error no manejado:', err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
-});
-
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' });
-});
-
 // Start server
 async function startServer() {
   console.log('🚀 Iniciando servidor...');
+  console.log('🌐 Entorno:', process.env.NODE_ENV || 'development');
+  console.log('📍 Puerto:', PORT);
   
   // Iniciar servidor primero
   const server = app.listen(PORT, () => {
     console.log(`🎯 Servidor ejecutándose en puerto ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
     console.log(`👨‍💻 Panel admin: http://localhost:${PORT}/admin`);
+    console.log(`🌐 URL Render: https://fiestadelafrutilla-backend.onrender.com`);
   });
   
-  // Luego conectar a MongoDB
-  await connectToMongo();
+  // Luego conectar a MongoDB (pero no bloquear el inicio del servidor)
+  connectToMongo().then(() => {
+    console.log('✅ Conexión a MongoDB completada');
+  }).catch(error => {
+    console.error('❌ Error en conexión MongoDB:', error);
+  });
   
   return server;
 }
@@ -180,6 +305,16 @@ process.on('unhandledRejection', (error) => {
 process.on('uncaughtException', (error) => {
   console.error('❌ Uncaught Exception:', error);
   process.exit(1);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('🛑 Shutting down gracefully...');
+  if (dbClient) {
+    await dbClient.close();
+    console.log('✅ MongoDB connection closed');
+  }
+  process.exit(0);
 });
 
 startServer();
